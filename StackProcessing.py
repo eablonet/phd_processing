@@ -643,11 +643,6 @@ class StackProcessing(object):
         pente = (y_base_right - y_base_left) / (x_base_right - x_base_left)
         y0 = y_base_left - pente*x_base_left
 
-        f = interpolate.interp1d(Cx, Cy, 'cubic')
-        Cx_new = np.arange(np.min(Cx), np.max(Cx), 1)
-        Cy_new = f(Cx_new)
-
-
         # === display current image with baseline === #
         if plot:
             print('Inclination : ', pente)
@@ -658,7 +653,6 @@ class StackProcessing(object):
             self.read_image(temp)
             plt.plot(Cx_left, Cy_left, '.b', markersize=1)
             plt.plot(Cx_right, Cy_right, '.g', markersize=1)
-            plt.plot(Cx_new, Cy_new, '--y', markersize=1)
             plt.plot(
                 np.arange(self.current_image.size[1]),
                 pente*np.arange(self.current_image.size[1])+y0,
@@ -666,7 +660,8 @@ class StackProcessing(object):
             )
             plt.show()
 
-        return pente*np.arange(self.current_image.size[1])+y0,
+        return pente*np.arange(self.current_image.size[1])+y0,\
+            [np.int(x_base_left), np.int(x_base_right)],
 
     def set_contour_ref(self, upper=25, lower=10):
         """
@@ -2090,7 +2085,7 @@ class StackProcessing(object):
         # give the volume back
         return volume, ca_left, ca_right, a_apex, Rl_fit, Rr_fit, y
 
-    def calcul_one_volume_total2(self, plot=False):
+    def calcul_one_volume_total2(self, x0, baseline=0, px_mm_ratio=-1, plot=False):
         ni = self.current_image_number+1
         if self.current_image_number < 9:
             Cx = np.load(
@@ -2125,14 +2120,8 @@ class StackProcessing(object):
                 str(ni) + '_Cy' +
                 '.npy'
             )
-        x_mean_left = Cx[np.argmin(Cy)]
-        x_mean_right = Cx[::-1][np.argmin(Cy[::-1])]
-        x_mean = np.int((x_mean_left + x_mean_right) / 2)
-        Cx_left = Cx[Cx <= x_mean]
-        Cx_right = Cx[Cx > x_mean]
-        Cy_left = Cy[Cx <= x_mean]
-        Cy_right = Cy[Cx > x_mean]
 
+        # eliminate small elements (< 3 px)
         mask = np.zeros_like(self.current_image.image)
         for i in range(len(Cx)):
             mask[np.int(Cy[i]), np.int(Cx[i])] = 1
@@ -2140,28 +2129,82 @@ class StackProcessing(object):
         mask_label = measure.label(mask)
         mask_regionprops = measure.regionprops(mask_label)
         for region in mask_regionprops:
-            if region.area < 5:
+            if region.area < 3:
                 mask_label[mask_label == region.label] = 0
         mask[mask_label < 1] = 0
 
-        Cx2 = np.array([])
+        Cx2 = np.arange(x0[0], x0[1])
         Cy2 = np.array([])
-        for i in self.current_image.size[1]:
+        for i in Cx2:
             col = mask[:, i]
-            Cx2 = np.append(Cx, i)
-            Cy2 = np.append(Cy, np.argmax(col))
+            if np.max(col) > 0:
+                Cy2 = np.append(Cy2, np.argmax(col))
+            else:
+                Cy2 = np.append(Cy2, np.NaN)
 
+        nan_loc = np.argwhere(np.isnan(Cy2)).flatten()
+        print(Cy2)
+        print(nan_loc)
+        print(len(Cy2))
+        print(len(Cx2))
+        print(x0)
 
+        c0 = 0
+        c = np.array([], dtype=np.int)
+        while c0 < len(nan_loc):
+            while (c0 < len(nan_loc)-1) and (nan_loc[c0+1] == nan_loc[c0]+1):
+                c0 += 1
+            if c0+1 != len(nan_loc):
+                c = np.append(c, c0+1)
+            c0 += 1
+        nan_loc = np.split(nan_loc, c)
+        print(nan_loc)
+
+        for i in range(len(nan_loc)):
+            if nan_loc[i][0] == 0:
+                val_left = baseline[x0[0]]
+            else:
+                val_left = Cy2[nan_loc[i][0]-1]
+            if nan_loc[i][-1] == len(Cx2)-1:
+                val_right = baseline[x0[1]]
+            else:
+                val_right = Cy2[nan_loc[i][-1]+1]
+            for j in range(len(nan_loc[i])):
+                print(j*(val_right-val_left)/len(nan_loc[i]))
+                Cy2[nan_loc[i][j]] = j*(val_right-val_left)/len(nan_loc[i])+val_left
+
+        f = interpolate.interp1d(Cx2, Cy2, 'cubic')
+        Cx_new = np.arange(x0[0], x0[1], 1)
+        Cy_new = f(Cx_new)
+
+        x_mean_left = Cx2[np.argmin(Cy2)]
+        x_mean_right = Cx2[::-1][np.argmin(Cy2[::-1])]
+        x_mean = np.int((x_mean_left + x_mean_right) / 2)
+        Cx_left = Cx2[Cx2 <= x_mean]
+        Cx_right = Cx2[Cx2 > x_mean]
+        Cy_left = Cy2[Cx2 <= x_mean]
+        Cy_right = Cy2[Cx2 > x_mean]
+
+        r_left = x_mean - Cx_left
+        r_right = Cx_right - Cx_right
+
+        volume = np.pi/2*(
+            np.sum(np.square(r_left)) +
+            np.sum(np.square(r_right))
+        )
+
+        if px_mm_ratio != -1:
+            volume *= px_mm_ratio**3
 
         if plot:
+            print('Volume : ', volume)
             plt.figure()
-            #plt.imshow(self.current_image.image, cmap='gray')
-            plt.imshow(mask, cmap='gray')
-            plt.plot(Cx_left, Cy_left, '.b', markersize=2)
-            plt.plot(Cx_right, Cy_right, '.g', markersize=2)
-            #plt.plot(Cx_new, Cy_new, '--y')
+            plt.imshow(self.current_image.image, cmap='gray')
+            plt.plot(Cx2, Cy2, '.b', markersize=2)
+            plt.plot(Cx_new, Cy_new, '--r')
             plt.show()
 
+        return volume
 
 
     def calcul_all_volume_total(self, plot=True):
@@ -2502,7 +2545,7 @@ if __name__ == '__main__':
     # stack.treatment('clahe', 2.5, 16)
     # stack.save_treatment('clahe', 2.5, 16)
     # x, ymin, ymax = stack.set_contour_ref()
-    ll = [90, 115, 130, 150, 161]
+    # ll = [90, 115, 130, 150, 161]
     # for i in ll:
     #     stack.read_image(i)
     #     stack.get_contour(0, 9, 0, 1, True)
@@ -2512,5 +2555,6 @@ if __name__ == '__main__':
     # for ii in ll:
     #   stack.display_contour(ii)
 
-    # stack.get_baseline2(True)
-    stack.calcul_one_volume_total2(True)
+    stack.read_image(90)
+    baseline, x0 = stack.get_baseline2()
+    stack.calcul_one_volume_total2(x0, baseline, -1, True)
