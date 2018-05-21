@@ -28,6 +28,7 @@ from matplotlib import pyplot as plt
 import cv2 as cv
 from skimage import morphology
 from skimage import measure
+
 from scipy import ndimage
 from scipy import interpolate
 
@@ -803,11 +804,9 @@ class StackProcessing(object):
             morphology.square(2)
         )
 
-        contour = np.array([])
         Cx = Cy = np.array([])
         for i in range(0, self.current_image.size[1]-4, 1):
             it = im_dilate[:, i]
-            contour = np.append(contour, 0)
             if np.argmax(it) > 0:
                 Cx = np.append(Cx, i)
                 Cy = np.append(Cy, np.argmax(it))
@@ -2134,28 +2133,25 @@ class StackProcessing(object):
         Cy_left = Cy[Cx <= x_mean]
         Cy_right = Cy[Cx > x_mean]
 
-        f = interpolate.interp1d(Cx, Cy, 'cubic')
-        Cx_new = np.arange(np.min(Cx), np.max(Cx), 1)
-        Cy_new = f(Cx_new)
         mask = np.zeros_like(self.current_image.image)
         for i in range(len(Cx)):
             mask[np.int(Cy[i]), np.int(Cx[i])] = 1
 
-        mask = morphology.binary_dilation(
-            mask,
-            morphology.square(2)
-        )
-        mask = morphology.binary_erosion(
-            mask,
-            morphology.square(2)
-        )
+        mask_label = measure.label(mask)
+        mask_regionprops = measure.regionprops(mask_label)
+        for region in mask_regionprops:
+            if region.area < 5:
+                mask_label[mask_label == region.label] = 0
+        mask[mask_label < 1] = 0
+
+        Cx2 = np.array([])
+        Cy2 = np.array([])
+        for i in self.current_image.size[1]:
+            col = mask[:, i]
+            Cx2 = np.append(Cx, i)
+            Cy2 = np.append(Cy, np.argmax(col))
 
 
-
-
-        m = np.array([1, 2, 3, 4, 5, 4, 3, 2, 1])
-        m = m/np.sum(m)
-        Cy_new = np.convolve(Cy_new, m, 'same')
 
         if plot:
             plt.figure()
