@@ -2555,6 +2555,6 @@ if __name__ == '__main__':
     # for ii in ll:
     #   stack.display_contour(ii)
 
-    stack.read_image(90)
+    stack.read_image(120)
     baseline, x0 = stack.get_baseline2()
     stack.calcul_one_volume_total2(x0, baseline, -1, True)
