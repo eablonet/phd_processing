@@ -2261,9 +2261,15 @@ class StackProcessing(object):
 
         self.read_image(temp)
 
-    def drop_info(self, x0, pente, baseline=0, px_mm_ratio=-1, plot=False):
+    def drop_info(self, x0, pente, baseline, px_mm_ratio=-1, plot=False):
         """Calculate drop information.
-        :params:
+
+        :params: x0 : 2 point list containing x position of intersection
+            between baseline and drop. (from get_baseline2)
+        :params: pente : baseline inclination (from get_baseline2)
+        :params: baseline : baseline vector (from get_baseline2)
+        :params: px_mm_ratio: aspect ratio (default -1, is none calculate, and
+            results are in px)
 
         :output: mask: mask of 1 where there is the drop and 0 otherwise
         :output: volume: volume of the drop (this doesn't work... because
@@ -2644,6 +2650,80 @@ class StackProcessing(object):
 
     def display_drop_info(self):
         print('Drop informations')
+        vol = np.empty([self.n_image_tot, ], dtype=np.double)
+        area = np.empty([self.n_image_tot, ], dtype=np.double)
+        ca = np.empty([self.n_image_tot, 2], dtype=np.double)
+        alpha = np.empty([self.n_image_tot, ], dtype=np.double)
+
+        for it in range(self.n_image_tot):
+            if it < 9:
+                vol[it] = np.load(
+                    self.drop_info_directory + '000' + str(it+1) + '_volume' +
+                    '.npy'
+                )
+                area[it] = np.load(
+                    self.drop_info_directory + '000' + str(it+1) + '_area' +
+                    '.npy'
+                )
+                ca[it] = np.load(
+                    self.drop_info_directory + '000' + str(it+1) + '_ca' +
+                    '.npy'
+                )
+                alpha[it] = np.load(
+                    self.drop_info_directory + '000' + str(it+1) + '_alpha' +
+                    '.npy'
+                )
+            elif it < 99:
+                vol[it] = np.load(
+                    self.drop_info_directory + '00' + str(it+1) + '_volume' +
+                    '.npy'
+                )
+                area[it] = np.load(
+                    self.drop_info_directory + '00' + str(it+1) + '_area' +
+                    '.npy'
+                )
+                ca[it] = np.load(
+                    self.drop_info_directory + '00' + str(it+1) + '_ca' +
+                    '.npy'
+                )
+                alpha[it] = np.load(
+                    self.drop_info_directory + '00' + str(it+1) + '_alpha' +
+                    '.npy'
+                )
+            elif it < 999:
+                vol[it] = np.load(
+                    self.drop_info_directory + '0' + str(it+1) + '_volume' +
+                    '.npy'
+                )
+                area[it] = np.load(
+                    self.drop_info_directory + '/0' + str(it+1) + '_area' +
+                    '.npy'
+                )
+                ca[it] = np.load(
+                    self.drop_info_directory + '/0' + str(it+1) + '_ca' +
+                    '.npy'
+                )
+                alpha[it] = np.load(
+                    self.drop_info_directory + '/0' + str(it+1) + '_alpha' +
+                    '.npy'
+                )
+
+        print(ca)
+        print(ca[:, 0])
+
+
+        fig, ax = plt.subplots(
+            2, 2,
+            figsize=(11, 7),
+        )
+        ax[0, 0].plot(vol)
+        ax[0, 1].plot(area)
+        ax[1, 0].plot(ca[:, 0]*180/np.pi, '--r')
+        ax[1, 0].plot(ca[:, 1]*180/np.pi, '--b')
+        ax[1, 1].plot(alpha*180/np.pi)
+        plt.show()
+
+
 
 class StackProcessingError(Exception):
     """Create excpetion for StacProcessing class."""
@@ -2819,5 +2899,6 @@ if __name__ == '__main__':
     # for ii in ll:
     #   stack.display_contour(ii)
 
-    baseline, x0 = stack.get_baseline2(True)
-    stack.drop_info_all(x0, baseline[1], baseline[0], -1, False)
+    # baseline, x0 = stack.get_baseline2(True)
+    # stack.drop_info_all(x0, baseline[1], baseline[0], -1, False)
+    stack.display_drop_info()
