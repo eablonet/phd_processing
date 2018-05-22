@@ -2261,7 +2261,10 @@ class StackProcessing(object):
 
         self.read_image(temp)
 
-    def drop_info(self, x0, pente, baseline, px_mm_ratio=-1, plot=False):
+    def drop_info(
+        self, x0, pente, baseline, apex_data=[20, 2],
+        px_mm_ratio=-1, plot=False
+    ):
         """Calculate drop information.
 
         :params: x0 : 2 point list containing x position of intersection
@@ -2409,14 +2412,17 @@ class StackProcessing(object):
         )
 
         # apex angle
-        nb_pt2 = 50
-        z2_left = np.polyfit(Cx_left[-nb_pt2:], Cy_left[-nb_pt2:], 1)
-        z2_right = np.polyfit(Cx_right[:nb_pt2], Cy_right[:nb_pt2], 1)
+        nb_pt2 = apex_data[0]
+        z2_left = np.polyfit(Cx_left[-nb_pt2:], Cy_left[-nb_pt2:], apex_data[1])
+        z2_right = np.polyfit(Cx_right[:nb_pt2], Cy_right[:nb_pt2], apex_data[1])
         p2_left = np.poly1d(z2_left)
         p2_right = np.poly1d(z2_right)
+        p2_left_prime = np.polyder(p2_left)
+        p2_right_prime = np.polyder(p2_right)
         alpha = np.arctan(
             np.abs(
-                (z2_left[0] - z2_right[0]) / (1 + z2_left[0]*z2_right[0])
+                (p2_left_prime(x_mean) - p2_right_prime(x_mean)) /
+                (1 + p2_left_prime(x_mean)*p2_right_prime(x_mean))
             )
         )
         alpha = np.pi - alpha
@@ -2448,10 +2454,12 @@ class StackProcessing(object):
 
         return mask, volume, area, [theta_left, theta_right], alpha
 
-    def drop_info_all(self, x0, pente, baseline=0, px_mm_ratio=-1, plot=True):
+    def drop_info_all(self, x0, pente, baseline, px_mm_ratio=-1, plot=True):
         """Calculate all volume."""
+        nb_pt, order = self.apex_angle(x0, pente, baseline)
         temp = self.current_image_number  # stocker l'image actuelle
-        # create wait bar
+
+        ### create wait bar ###
         widgets = ['Calculating drop infos',
                    progressbar.Percentage(),
                    ' ', progressbar.Bar('=', '[', ']'),
@@ -2462,12 +2470,18 @@ class StackProcessing(object):
         )
         pbar.start()
 
-        # loop calcul volumes
+        ### loop calcul volumes ###
         for i in range(len(self.image_list)):
             self.read_image(i)
-            _, volume, area, ca, alpha = \
-                self.drop_info(x0, pente, baseline, px_mm_ratio, False)
+            mask, volume, area, ca, alpha = \
+                self.drop_info(
+                    x0, pente, baseline, [nb_pt, order], px_mm_ratio, False
+                )
             if i < 9:
+                np.save(
+                    self.contour_directory + '/000' + str(i+1) + '_mask',
+                    mask
+                )
                 np.save(
                     self.drop_info_directory + '/000' + str(i+1) + '_volume',
                     volume
@@ -2486,6 +2500,10 @@ class StackProcessing(object):
                 )
             elif i < 99:
                 np.save(
+                    self.contour_directory + '/00' + str(i+1) + '_mask',
+                    mask
+                )
+                np.save(
                     self.drop_info_directory + '/00' + str(i+1) + '_volume',
                     volume
                 )
@@ -2502,6 +2520,10 @@ class StackProcessing(object):
                     alpha
                 )
             elif i < 999:
+                np.save(
+                    self.contour_directory + '/0' + str(i+1) + '_mask',
+                    mask
+                )
                 np.save(
                     self.drop_info_directory + '/0' + str(i+1) + '_volume',
                     volume
@@ -2522,133 +2544,8 @@ class StackProcessing(object):
         pbar.finish()
         self.read_image(temp)
 
-        if plot:
-            # === diplay volume + spatio with contour === #
-            temp = self.current_spatioy_number
-            # we select the center of the image
-            self.read_spatio(
-                np.array(
-                    np.rint(len(self.spatioy_list)/2),
-                    dtype=int
-                )
-            )
-            ref_x = np.load(
-                self.contour_directory + 'ref_x.npy'
-            )
-            self.read_spatio(
-                int(np.mean(ref_x))
-            )
-            contour = []
-            for i_t in np.arange(
-                1, self.current_spatioy.size[1]
-            ):
-
-                if i_t < 10:
-                    y = np.load(
-                        self.contour_directory + 'y_000' +
-                        str(i_t) +
-                        '.npy'
-                    )
-                elif i_t < 100:
-                    y = np.load(
-                        self.contour_directory + 'y_00' +
-                        str(i_t) +
-                        '.npy'
-                    )
-                elif i_t < 1000:
-                    y = np.load(
-                        self.contour_directory + 'y_0' +
-                        str(i_t) +
-                        '.npy'
-                    )
-                idx = ref_x == self.current_spatioy_number
-                contour.append(y[idx])
-            contour = np.array(contour, dtype=int)
-
-            fig, ax1 = plt.subplots(figsize=(11, 7))
-            fig.canvas.set_window_title('Volume vs time')
-
-            ax1.plot(
-                np.arange(0, self.current_spatioy.size[1]),
-                v,
-                '.b', markersize=4
-            )
-            ax1.plot(
-                tg, vg*(1 - 916/999) + np.mean(v[:150]),
-                '.r', markersize=4
-            )
-            plt.ylabel(r'Volume ($px^3$)')
-            plt.xlabel('Time (frame)')
-
-            plt.grid(True)
-
-            ax2 = fig.add_axes([.1, .4, .4, .4])
-            ax2.imshow(self.current_spatioy.image, cmap='gray')
-            ax2.plot(
-                np.arange(0, self.current_spatioy.size[1]-1),
-                contour,
-                '.b', markersize=2
-            )
-            ax2.plot(
-                t_front,
-                y_front,
-                '.r', markersize=2
-            )
-            ax2.set_title('Spatio_y ' + str(self.current_spatioy_number))
-
-            # === diplay left and right  contact angles === #
-            fig_ca, ax_ca = plt.subplots(figsize=(11, 7))
-            fig_ca.canvas.set_window_title('Contact angle vs time')
-
-            ax_ca.plot(
-                ca_left*180/np.pi, '-r', linewidth=2,
-                label='Left contact angle'
-            )
-            ax_ca.plot(
-                ca_right*180/np.pi, '-b', linewidth=2,
-                label='Right contact angle'
-            )
-
-            plt.xlabel('Time (frame)')
-            plt.ylabel('Angle (rad)')
-            plt.grid(True)
-            plt.legend(fancybox=True, shadow=True)
-
-            self.read_spatio(temp)
-
-            # === diplay apex angles === #
-            fig_apex, ax_apex = plt.subplots(figsize=(11, 7))
-            fig_apex.canvas.set_window_title('Apex angle vs time')
-
-            ax_apex.plot(
-                a_apex*180/np.pi, '-k', linewidth=2,
-            )
-            plt.xlabel('Time (frame)')
-            plt.ylabel('Angle (rad)')
-
-            plt.grid(True)
-
-            # === display rho_alpha === #
-            v0 = np.mean(v[:150])
-            rho_a = []
-            for i_t in range(len(tg)):
-                t_tot = np.arange(0, self.current_spatioy.size[1])
-                idt = [i for i, x in enumerate(t_tot) if x == tg[i_t]]
-
-                rho_a = np.append(
-                    rho_a,
-                    (999*v0 - 916*vg[i_t]) /
-                    (v[idt] - vg[i_t])
-                )
-            plt.figure()
-            plt.plot(tg[:-1], rho_a[:-1], '.k')
-
-            # === display all figure == #
-            plt.show()
-
-        self.read_image(temp)
-
     def display_drop_info(self):
+        """Display drop informations vvs times."""
         print('Drop informations')
         vol = np.empty([self.n_image_tot, ], dtype=np.double)
         area = np.empty([self.n_image_tot, ], dtype=np.double)
@@ -2708,8 +2605,10 @@ class StackProcessing(object):
                     '.npy'
                 )
 
-        print(ca)
-        print(ca[:, 0])
+
+
+
+
 
 
         fig, ax = plt.subplots(
@@ -2723,10 +2622,210 @@ class StackProcessing(object):
         ax[1, 1].plot(alpha*180/np.pi)
         plt.show()
 
+    def apex_angle(self, x0, pente, baseline=0):
+        """Display apex angle vs nb_point.
+
+        For calculate the tangentn we need to chose an order for the polynome
+        and the point number for the fit.
+
+        :output : nb_pt : provide the number of point for the fit
+        :output : order : order for polynomial fit
+        """
+        nb_point = np.arange(5, 200)
+
+        ni = self.n_image_tot
+        if ni < 9:
+            Cx = np.load(
+                self.contour_directory + '000' +
+                str(ni) + '_Cx' +
+                '.npy'
+            )
+            Cy = np.load(
+                self.contour_directory + '000' +
+                str(ni) + '_Cy' +
+                '.npy'
+            )
+        elif ni < 99:
+            Cx = np.load(
+                self.contour_directory + '00' +
+                str(ni) + '_Cx' +
+                '.npy'
+            )
+            Cy = np.load(
+                self.contour_directory + '00' +
+                str(ni) + '_Cy' +
+                '.npy'
+            )
+        elif ni < 999:
+            Cx = np.load(
+                self.contour_directory + '0' +
+                str(ni) + '_Cx' +
+                '.npy'
+            )
+            Cy = np.load(
+                self.contour_directory + '0' +
+                str(ni) + '_Cy' +
+                '.npy'
+            )
+
+        # eliminate small elements (< 3 px)
+        mask = np.zeros_like(self.current_image.image)
+        for i in range(len(Cx)):
+            mask[np.int(Cy[i]), np.int(Cx[i])] = 1
+
+        mask_label = measure.label(mask)
+        mask_regionprops = measure.regionprops(mask_label)
+        for region in mask_regionprops:
+            if region.area < 3:
+                mask_label[mask_label == region.label] = 0
+        mask[mask_label < 1] = 0
+
+        Cx2 = np.arange(x0[0], x0[1])
+        Cy2 = np.array([])
+        for i in Cx2:
+            col = mask[:, i]
+            if np.max(col) > 0:
+                Cy2 = np.append(Cy2, np.argmax(col))
+            else:
+                Cy2 = np.append(Cy2, np.NaN)
+
+        nan_loc = np.argwhere(np.isnan(Cy2)).flatten()
+
+        c0 = 0
+        c = np.array([], dtype=np.int)
+        while c0 < len(nan_loc):
+            while (c0 < len(nan_loc)-1) and (nan_loc[c0+1] == nan_loc[c0]+1):
+                c0 += 1
+            if c0+1 != len(nan_loc):
+                c = np.append(c, c0+1)
+            c0 += 1
+        nan_loc = np.split(nan_loc, c)
+
+        for i in range(len(nan_loc)):
+            if nan_loc[i][0] == 0:
+                val_left = baseline[x0[0]]
+            else:
+                val_left = Cy2[nan_loc[i][0]-1]
+            if nan_loc[i][-1] == len(Cx2)-1:
+                val_right = baseline[x0[1]]
+            else:
+                val_right = Cy2[nan_loc[i][-1]+1]
+            for j in range(len(nan_loc[i])):
+                Cy2[nan_loc[i][j]] = \
+                    j*(val_right-val_left)/len(nan_loc[i])+val_left
+
+        x_mean_left = Cx2[np.argmin(Cy2)]
+        x_mean_right = Cx2[::-1][np.argmin(Cy2[::-1])]
+        x_mean = np.int((x_mean_left + x_mean_right) / 2)
+        Cx_left = Cx2[Cx2 <= x_mean]
+        Cx_right = Cx2[Cx2 > x_mean]
+        Cy_left = Cy2[Cx2 <= x_mean]
+        Cy_right = Cy2[Cx2 > x_mean]
+
+        plt.figure()
+        for nb_pt in nb_point:
+            z1_left = np.polyfit(Cx_left[-nb_pt:], Cy_left[-nb_pt:], 1)
+            z1_right = np.polyfit(Cx_right[:nb_pt], Cy_right[:nb_pt], 1)
+            p1_left = np.poly1d(z1_left)
+            p1_right = np.poly1d(z1_right)
+            p1_left_prime = np.polyder(p1_left)
+            p1_right_prime = np.polyder(p1_right)
+            alpha = np.arctan(
+                np.abs(
+                    (p1_left_prime(x_mean) - p1_right_prime(x_mean)) /
+                    (1 + p1_left_prime(x_mean)*p1_right_prime(x_mean))
+                )
+            )
+            alpha = np.pi - alpha
+            plt.plot(nb_pt, alpha*180/np.pi, '.k', label='order-1')
+
+            z2_left = np.polyfit(Cx_left[-nb_pt:], Cy_left[-nb_pt:], 2)
+            z2_right = np.polyfit(Cx_right[:nb_pt], Cy_right[:nb_pt], 2)
+            p2_left = np.poly1d(z2_left)
+            p2_right = np.poly1d(z2_right)
+            p2_left_prime = np.polyder(p2_left)
+            p2_right_prime = np.polyder(p2_right)
+            alpha = np.arctan(
+                np.abs(
+                    (p2_left_prime(x_mean) - p2_right_prime(x_mean)) /
+                    (1 + p2_left_prime(x_mean)*p2_right_prime(x_mean))
+                )
+            )
+            alpha = np.pi - alpha
+            plt.plot(nb_pt, alpha*180/np.pi, '.b', label='order-2')
+
+            z3_left = np.polyfit(Cx_left[-nb_pt:], Cy_left[-nb_pt:], 3)
+            z3_right = np.polyfit(Cx_right[:nb_pt], Cy_right[:nb_pt], 3)
+            p3_left = np.poly1d(z3_left)
+            p3_right = np.poly1d(z3_right)
+            p3_left_prime = np.polyder(p3_left)
+            p3_right_prime = np.polyder(p3_right)
+            alpha = np.arctan(
+                np.abs(
+                    (p3_left_prime(x_mean) - p3_right_prime(x_mean)) /
+                    (1 + p3_left_prime(x_mean)*p3_right_prime(x_mean))
+                )
+            )
+            alpha = np.pi - alpha
+            plt.plot(nb_pt, alpha*180/np.pi, '.r', label='order-3')
+
+        plt.grid(True)
+
+        plt.figure()
+        plt.imshow(self.current_image.image, cmap='gray')
+        plt.plot(Cx_left, Cy_left, '--r')
+        plt.plot(Cx_right, Cy_right, '--b')
+        plt.plot(
+            [Cx_left[-200], Cx_right[200]],
+            [Cy_left[-200], Cy_right[200]],
+            '--r', linewidth=3,
+        )
+        plt.plot(
+            [Cx_left[-5], Cx_right[5]],
+            [Cy_left[-5], Cy_right[5]],
+            '--b', linewidth=3,
+        )
+        plt.show()
+
+        nb_pt = int(input('Which point number : '))
+        order = int(input('Which order for polynome : '))
+
+        return nb_pt, order
+
+    def correct_mask(self, time_ref):
+        """Corect the mask for image detection."""
+        if time_ref+1 < 9:
+            mask = np.load(
+                self.contour_directory + '000' + str(it+1) + '_mask' +
+                '.npy'
+            )
+        elif time_ref+1 < 99:
+            mask = np.load(
+                self.contour_directory + '00' + str(it+1) + '_mask' +
+                '.npy'
+            )
+        elif time_ref+1 < 999:
+            mask = np.load(
+                self.contour_directory + '0' + str(it+1) + '_mask' +
+                '.npy'
+            )
+
+        # mask[mask <= np.std(mask)] = 0
+        # mask[mask > 0] = 1
+
+        plt.figure()
+        self.read_image(time_ref)
+        plt.imshow(self.current_image.image, cmap='gray')
+        plt.imshow(mask, alpha=.3)
+
+        # plt.figure()
+        # plt.imshow(mask1)
+        plt.show()
 
 
 class StackProcessingError(Exception):
     """Create excpetion for StacProcessing class."""
+
     pass
 
 
@@ -2899,6 +2998,8 @@ if __name__ == '__main__':
     # for ii in ll:
     #   stack.display_contour(ii)
 
-    # baseline, x0 = stack.get_baseline2(True)
-    # stack.drop_info_all(x0, baseline[1], baseline[0], -1, False)
+    # stack.read_image(161)
+    baseline, x0 = stack.get_baseline2()
+    stack.drop_info_all(x0, baseline[1], baseline[0], -1, True)
     stack.display_drop_info()
+    # stack.correct_mask(118)
