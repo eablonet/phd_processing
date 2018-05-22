@@ -86,9 +86,7 @@ class StackProcessing(object):
         return self.data_directory
 
     def define_exporting_directory(self):
-        """
-        Define output dir ectory.
-        """
+        """Define output directories."""
         self.exporting_directory = self.data_directory + 'export_image/'
 
         if not os.path.isdir(self.exporting_directory):
@@ -109,6 +107,12 @@ class StackProcessing(object):
         )
         if not os.path.isdir(self.contour_directory):
             os.makedirs(self.contour_directory)
+
+        self.drop_info_directory = self.exporting_directory.replace(
+            'export_image', 'drop_info'
+        )
+        if not os.path.isdir(self.drop_info_directory):
+            os.makedirs(self.drop_info_directory)
 
     def update_lists(self):
         """
@@ -645,7 +649,7 @@ class StackProcessing(object):
 
         # === display current image with baseline === #
         if plot:
-            print('Inclination : ', pente)
+            print('Inclination : ', pente*180/np.pi)
             plt.figure()
             temp = self.current_image_number
             self.read_image(ni-1)
@@ -660,7 +664,7 @@ class StackProcessing(object):
             )
             plt.show()
 
-        return pente*np.arange(self.current_image.size[1])+y0,\
+        return [pente*np.arange(self.current_image.size[1])+y0, pente, y0],\
             [np.int(x_base_left), np.int(x_base_right)],
 
     def set_contour_ref(self, upper=25, lower=10):
@@ -2085,128 +2089,6 @@ class StackProcessing(object):
         # give the volume back
         return volume, ca_left, ca_right, a_apex, Rl_fit, Rr_fit, y
 
-    def calcul_one_volume_total2(self, x0, baseline=0, px_mm_ratio=-1, plot=False):
-        ni = self.current_image_number+1
-        if self.current_image_number < 9:
-            Cx = np.load(
-                self.contour_directory + '000' +
-                str(ni) + '_Cx' +
-                '.npy'
-            )
-            Cy = np.load(
-                self.contour_directory + '000' +
-                str(ni) + '_Cy' +
-                '.npy'
-            )
-        elif self.current_image_number < 99:
-            Cx = np.load(
-                self.contour_directory + '00' +
-                str(ni) + '_Cx' +
-                '.npy'
-            )
-            Cy = np.load(
-                self.contour_directory + '00' +
-                str(ni) + '_Cy' +
-                '.npy'
-            )
-        elif self.current_image_number < 999:
-            Cx = np.load(
-                self.contour_directory + '0' +
-                str(ni) + '_Cx' +
-                '.npy'
-            )
-            Cy = np.load(
-                self.contour_directory + '0' +
-                str(ni) + '_Cy' +
-                '.npy'
-            )
-
-        # eliminate small elements (< 3 px)
-        mask = np.zeros_like(self.current_image.image)
-        for i in range(len(Cx)):
-            mask[np.int(Cy[i]), np.int(Cx[i])] = 1
-
-        mask_label = measure.label(mask)
-        mask_regionprops = measure.regionprops(mask_label)
-        for region in mask_regionprops:
-            if region.area < 3:
-                mask_label[mask_label == region.label] = 0
-        mask[mask_label < 1] = 0
-
-        Cx2 = np.arange(x0[0], x0[1])
-        Cy2 = np.array([])
-        for i in Cx2:
-            col = mask[:, i]
-            if np.max(col) > 0:
-                Cy2 = np.append(Cy2, np.argmax(col))
-            else:
-                Cy2 = np.append(Cy2, np.NaN)
-
-        nan_loc = np.argwhere(np.isnan(Cy2)).flatten()
-        print(Cy2)
-        print(nan_loc)
-        print(len(Cy2))
-        print(len(Cx2))
-        print(x0)
-
-        c0 = 0
-        c = np.array([], dtype=np.int)
-        while c0 < len(nan_loc):
-            while (c0 < len(nan_loc)-1) and (nan_loc[c0+1] == nan_loc[c0]+1):
-                c0 += 1
-            if c0+1 != len(nan_loc):
-                c = np.append(c, c0+1)
-            c0 += 1
-        nan_loc = np.split(nan_loc, c)
-        print(nan_loc)
-
-        for i in range(len(nan_loc)):
-            if nan_loc[i][0] == 0:
-                val_left = baseline[x0[0]]
-            else:
-                val_left = Cy2[nan_loc[i][0]-1]
-            if nan_loc[i][-1] == len(Cx2)-1:
-                val_right = baseline[x0[1]]
-            else:
-                val_right = Cy2[nan_loc[i][-1]+1]
-            for j in range(len(nan_loc[i])):
-                print(j*(val_right-val_left)/len(nan_loc[i]))
-                Cy2[nan_loc[i][j]] = j*(val_right-val_left)/len(nan_loc[i])+val_left
-
-        f = interpolate.interp1d(Cx2, Cy2, 'cubic')
-        Cx_new = np.arange(x0[0], x0[1], 1)
-        Cy_new = f(Cx_new)
-
-        x_mean_left = Cx2[np.argmin(Cy2)]
-        x_mean_right = Cx2[::-1][np.argmin(Cy2[::-1])]
-        x_mean = np.int((x_mean_left + x_mean_right) / 2)
-        Cx_left = Cx2[Cx2 <= x_mean]
-        Cx_right = Cx2[Cx2 > x_mean]
-        Cy_left = Cy2[Cx2 <= x_mean]
-        Cy_right = Cy2[Cx2 > x_mean]
-
-        r_left = x_mean - Cx_left
-        r_right = Cx_right - Cx_right
-
-        volume = np.pi/2*(
-            np.sum(np.square(r_left)) +
-            np.sum(np.square(r_right))
-        )
-
-        if px_mm_ratio != -1:
-            volume *= px_mm_ratio**3
-
-        if plot:
-            print('Volume : ', volume)
-            plt.figure()
-            plt.imshow(self.current_image.image, cmap='gray')
-            plt.plot(Cx2, Cy2, '.b', markersize=2)
-            plt.plot(Cx_new, Cy_new, '--r')
-            plt.show()
-
-        return volume
-
-
     def calcul_all_volume_total(self, plot=True):
         """Calculate all volume."""
         temp = self.current_image_number  # stocker l'image actuelle
@@ -2379,10 +2261,392 @@ class StackProcessing(object):
 
         self.read_image(temp)
 
+    def drop_info(self, x0, pente, baseline=0, px_mm_ratio=-1, plot=False):
+        """Calculate drop information.
+        :params:
+
+        :output: mask: mask of 1 where there is the drop and 0 otherwise
+        :output: volume: volume of the drop (this doesn't work... because
+            axisymétric hypothsesi is wrong)
+        :output: area: number of pixel in the drop
+        :output: theta: vector containing [0] left contact angle, [1] right
+            contact angle
+        :output: alpha: angle at the apex
+        """
+        ni = self.current_image_number+1
+        if self.current_image_number < 9:
+            Cx = np.load(
+                self.contour_directory + '000' +
+                str(ni) + '_Cx' +
+                '.npy'
+            )
+            Cy = np.load(
+                self.contour_directory + '000' +
+                str(ni) + '_Cy' +
+                '.npy'
+            )
+        elif self.current_image_number < 99:
+            Cx = np.load(
+                self.contour_directory + '00' +
+                str(ni) + '_Cx' +
+                '.npy'
+            )
+            Cy = np.load(
+                self.contour_directory + '00' +
+                str(ni) + '_Cy' +
+                '.npy'
+            )
+        elif self.current_image_number < 999:
+            Cx = np.load(
+                self.contour_directory + '0' +
+                str(ni) + '_Cx' +
+                '.npy'
+            )
+            Cy = np.load(
+                self.contour_directory + '0' +
+                str(ni) + '_Cy' +
+                '.npy'
+            )
+
+        # eliminate small elements (< 3 px)
+        mask = np.zeros_like(self.current_image.image)
+        for i in range(len(Cx)):
+            mask[np.int(Cy[i]), np.int(Cx[i])] = 1
+
+        mask_label = measure.label(mask)
+        mask_regionprops = measure.regionprops(mask_label)
+        for region in mask_regionprops:
+            if region.area < 3:
+                mask_label[mask_label == region.label] = 0
+        mask[mask_label < 1] = 0
+
+        Cx2 = np.arange(x0[0], x0[1])
+        Cy2 = np.array([])
+        for i in Cx2:
+            col = mask[:, i]
+            if np.max(col) > 0:
+                Cy2 = np.append(Cy2, np.argmax(col))
+            else:
+                Cy2 = np.append(Cy2, np.NaN)
+
+        nan_loc = np.argwhere(np.isnan(Cy2)).flatten()
+
+        c0 = 0
+        c = np.array([], dtype=np.int)
+        while c0 < len(nan_loc):
+            while (c0 < len(nan_loc)-1) and (nan_loc[c0+1] == nan_loc[c0]+1):
+                c0 += 1
+            if c0+1 != len(nan_loc):
+                c = np.append(c, c0+1)
+            c0 += 1
+        nan_loc = np.split(nan_loc, c)
+
+        for i in range(len(nan_loc)):
+            if nan_loc[i][0] == 0:
+                val_left = baseline[x0[0]]
+            else:
+                val_left = Cy2[nan_loc[i][0]-1]
+            if nan_loc[i][-1] == len(Cx2)-1:
+                val_right = baseline[x0[1]]
+            else:
+                val_right = Cy2[nan_loc[i][-1]+1]
+            for j in range(len(nan_loc[i])):
+                Cy2[nan_loc[i][j]] = j*(val_right-val_left)/len(nan_loc[i])+val_left
+
+        f = interpolate.interp1d(Cx2, Cy2, 'cubic')
+        Cx_new = np.arange(x0[0], x0[1], 1)
+        Cy_new = f(Cx_new)
+
+        x_mean_left = Cx2[np.argmin(Cy2)]
+        x_mean_right = Cx2[::-1][np.argmin(Cy2[::-1])]
+        x_mean = np.int((x_mean_left + x_mean_right) / 2)
+        Cx_left = Cx2[Cx2 <= x_mean]
+        Cx_right = Cx2[Cx2 > x_mean]
+        Cy_left = Cy2[Cx2 <= x_mean]
+        Cy_right = Cy2[Cx2 > x_mean]
+
+        r_left = x_mean - Cx_left
+        r_right = Cx_right - Cx_right
+
+        mask = np.zeros_like(self.current_image.image)
+        for i in range(x0[1]-x0[0]):
+            for j in range(self.current_image.size[0]):
+                if j <= baseline[i] and j >= Cy_new[i]:
+                    mask[j, i+x0[0]] = 1
+
+        area = np.sum(mask)
+
+        volume = np.pi/2*(
+            np.sum(np.square(r_left)) +
+            np.sum(np.square(r_right))
+        )
+
+        if px_mm_ratio != -1:
+            volume *= px_mm_ratio**3
+            area *= px_mm_ratio**2
+
+        # left & right contact angle
+        nb_pt = 10
+        z_left = np.polyfit(Cx_left[:nb_pt], Cy_left[:nb_pt], 1)
+        z_right = np.polyfit(Cx_right[-nb_pt:], Cy_right[-nb_pt:], 1)
+        p_left = np.poly1d(z_left)
+        p_right = np.poly1d(z_right)
+        theta_left = np.arctan(
+            np.abs(
+                (z_left[0] - pente) / (1 + z_left[0]*pente)
+            )
+        )
+        theta_right = np.arctan(
+            np.abs(
+                (z_right[0] - pente) / (1 + z_right[0]*pente)
+            )
+        )
+
+        # apex angle
+        nb_pt2 = 50
+        z2_left = np.polyfit(Cx_left[-nb_pt2:], Cy_left[-nb_pt2:], 1)
+        z2_right = np.polyfit(Cx_right[:nb_pt2], Cy_right[:nb_pt2], 1)
+        p2_left = np.poly1d(z2_left)
+        p2_right = np.poly1d(z2_right)
+        alpha = np.arctan(
+            np.abs(
+                (z2_left[0] - z2_right[0]) / (1 + z2_left[0]*z2_right[0])
+            )
+        )
+        alpha = np.pi - alpha
+
+        if plot:
+            plt.figure()
+            plt.plot(Cx_left, Cy_left, '.r')
+            plt.plot(Cx_right, Cy_right, '.b')
+            plt.plot(Cx_left[:nb_pt], p_left(Cx_left[:nb_pt]), '--b')
+            plt.plot(Cx_right[-nb_pt:], p_right(Cx_right[-nb_pt:]), '--r')
+            plt.plot(Cx_left[-nb_pt2:], p2_left(Cx_left[-nb_pt2:]), '--b')
+            plt.plot(Cx_right[:nb_pt2], p2_right(Cx_right[:nb_pt2]), '--r')
+            plt.grid(True)
+
+        if plot:
+            print('Volume(px or mm^3) : ', volume)
+            print('Area(px or mm^2) : ', area)
+            print('Ca left(°) : ', theta_left*180/np.pi)
+            print('Ca right(°) : ', theta_right*180/np.pi)
+            print('Apex angle(°) : ', (np.pi-alpha)*180/np.pi)
+            plt.figure()
+            plt.imshow(mask, cmap='gray')
+            plt.figure()
+            plt.imshow(self.current_image.image, cmap='gray')
+            plt.plot(np.arange(self.current_image.size[1]), baseline, '--y')
+            plt.plot(Cx2, Cy2, '.b', markersize=2)
+            plt.plot(Cx_new, Cy_new, '--r')
+            plt.show()
+
+        return mask, volume, area, [theta_left, theta_right], alpha
+
+    def drop_info_all(self, x0, pente, baseline=0, px_mm_ratio=-1, plot=True):
+        """Calculate all volume."""
+        temp = self.current_image_number  # stocker l'image actuelle
+        # create wait bar
+        widgets = ['Calculating drop infos',
+                   progressbar.Percentage(),
+                   ' ', progressbar.Bar('=', '[', ']'),
+                   ' ', progressbar.ETA(),
+                   ' ', progressbar.FileTransferSpeed()]
+        pbar = progressbar.ProgressBar(
+            widgets=widgets, maxval=len(self.image_list)
+        )
+        pbar.start()
+
+        # loop calcul volumes
+        for i in range(len(self.image_list)):
+            self.read_image(i)
+            _, volume, area, ca, alpha = \
+                self.drop_info(x0, pente, baseline, px_mm_ratio, False)
+            if i < 9:
+                np.save(
+                    self.drop_info_directory + '/000' + str(i+1) + '_volume',
+                    volume
+                )
+                np.save(
+                    self.drop_info_directory + '/000' + str(i+1) + '_area',
+                    area
+                )
+                np.save(
+                    self.drop_info_directory + '/000' + str(i+1) + '_ca',
+                    ca
+                )
+                np.save(
+                    self.drop_info_directory + '/000' + str(i+1) + '_alpha',
+                    alpha
+                )
+            elif i < 99:
+                np.save(
+                    self.drop_info_directory + '/00' + str(i+1) + '_volume',
+                    volume
+                )
+                np.save(
+                    self.drop_info_directory + '/00' + str(i+1) + '_area',
+                    area
+                )
+                np.save(
+                    self.drop_info_directory + '/00' + str(i+1) + '_ca',
+                    ca
+                )
+                np.save(
+                    self.drop_info_directory + '/00' + str(i+1) + '_alpha',
+                    alpha
+                )
+            elif i < 999:
+                np.save(
+                    self.drop_info_directory + '/0' + str(i+1) + '_volume',
+                    volume
+                )
+                np.save(
+                    self.drop_info_directory + '/0' + str(i+1) + '_area',
+                    area
+                )
+                np.save(
+                    self.drop_info_directory + '/0' + str(i+1) + '_ca',
+                    ca
+                )
+                np.save(
+                    self.drop_info_directory + '/0' + str(i+1) + '_alpha',
+                    alpha
+                )
+            pbar.update(i)
+        pbar.finish()
+        self.read_image(temp)
+
+        if plot:
+            # === diplay volume + spatio with contour === #
+            temp = self.current_spatioy_number
+            # we select the center of the image
+            self.read_spatio(
+                np.array(
+                    np.rint(len(self.spatioy_list)/2),
+                    dtype=int
+                )
+            )
+            ref_x = np.load(
+                self.contour_directory + 'ref_x.npy'
+            )
+            self.read_spatio(
+                int(np.mean(ref_x))
+            )
+            contour = []
+            for i_t in np.arange(
+                1, self.current_spatioy.size[1]
+            ):
+
+                if i_t < 10:
+                    y = np.load(
+                        self.contour_directory + 'y_000' +
+                        str(i_t) +
+                        '.npy'
+                    )
+                elif i_t < 100:
+                    y = np.load(
+                        self.contour_directory + 'y_00' +
+                        str(i_t) +
+                        '.npy'
+                    )
+                elif i_t < 1000:
+                    y = np.load(
+                        self.contour_directory + 'y_0' +
+                        str(i_t) +
+                        '.npy'
+                    )
+                idx = ref_x == self.current_spatioy_number
+                contour.append(y[idx])
+            contour = np.array(contour, dtype=int)
+
+            fig, ax1 = plt.subplots(figsize=(11, 7))
+            fig.canvas.set_window_title('Volume vs time')
+
+            ax1.plot(
+                np.arange(0, self.current_spatioy.size[1]),
+                v,
+                '.b', markersize=4
+            )
+            ax1.plot(
+                tg, vg*(1 - 916/999) + np.mean(v[:150]),
+                '.r', markersize=4
+            )
+            plt.ylabel(r'Volume ($px^3$)')
+            plt.xlabel('Time (frame)')
+
+            plt.grid(True)
+
+            ax2 = fig.add_axes([.1, .4, .4, .4])
+            ax2.imshow(self.current_spatioy.image, cmap='gray')
+            ax2.plot(
+                np.arange(0, self.current_spatioy.size[1]-1),
+                contour,
+                '.b', markersize=2
+            )
+            ax2.plot(
+                t_front,
+                y_front,
+                '.r', markersize=2
+            )
+            ax2.set_title('Spatio_y ' + str(self.current_spatioy_number))
+
+            # === diplay left and right  contact angles === #
+            fig_ca, ax_ca = plt.subplots(figsize=(11, 7))
+            fig_ca.canvas.set_window_title('Contact angle vs time')
+
+            ax_ca.plot(
+                ca_left*180/np.pi, '-r', linewidth=2,
+                label='Left contact angle'
+            )
+            ax_ca.plot(
+                ca_right*180/np.pi, '-b', linewidth=2,
+                label='Right contact angle'
+            )
+
+            plt.xlabel('Time (frame)')
+            plt.ylabel('Angle (rad)')
+            plt.grid(True)
+            plt.legend(fancybox=True, shadow=True)
+
+            self.read_spatio(temp)
+
+            # === diplay apex angles === #
+            fig_apex, ax_apex = plt.subplots(figsize=(11, 7))
+            fig_apex.canvas.set_window_title('Apex angle vs time')
+
+            ax_apex.plot(
+                a_apex*180/np.pi, '-k', linewidth=2,
+            )
+            plt.xlabel('Time (frame)')
+            plt.ylabel('Angle (rad)')
+
+            plt.grid(True)
+
+            # === display rho_alpha === #
+            v0 = np.mean(v[:150])
+            rho_a = []
+            for i_t in range(len(tg)):
+                t_tot = np.arange(0, self.current_spatioy.size[1])
+                idt = [i for i, x in enumerate(t_tot) if x == tg[i_t]]
+
+                rho_a = np.append(
+                    rho_a,
+                    (999*v0 - 916*vg[i_t]) /
+                    (v[idt] - vg[i_t])
+                )
+            plt.figure()
+            plt.plot(tg[:-1], rho_a[:-1], '.k')
+
+            # === display all figure == #
+            plt.show()
+
+        self.read_image(temp)
+
+    def display_drop_info(self):
+        print('Drop informations')
 
 class StackProcessingError(Exception):
     """Create excpetion for StacProcessing class."""
-
     pass
 
 
@@ -2555,6 +2819,5 @@ if __name__ == '__main__':
     # for ii in ll:
     #   stack.display_contour(ii)
 
-    stack.read_image(120)
-    baseline, x0 = stack.get_baseline2()
-    stack.calcul_one_volume_total2(x0, baseline, -1, True)
+    baseline, x0 = stack.get_baseline2(True)
+    stack.drop_info_all(x0, baseline[1], baseline[0], -1, False)
