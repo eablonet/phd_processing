@@ -226,7 +226,7 @@ class StackProcessing(object):
             )
             self.read_image(0)
 
-    def create_spatio(self):
+    def create_spatio(self, read_mask=False):
         """
         Create image spatio-temporal of the view.
 
@@ -255,6 +255,23 @@ class StackProcessing(object):
             # # initiate matrix size for spatioy
             for i in range(self.n_image_tot):
                 self.read_image(i)
+                if read_mask:
+                    if i+1 < 9:
+                        mask = np.load(
+                            self.contour_directory + '000' + str(i+1) +
+                            '_mask' + '.npy'
+                        )
+                    elif i+1 < 99:
+                        mask = np.load(
+                            self.contour_directory + '00' + str(i+1) +
+                            '_mask' + '.npy'
+                        )
+                    elif i+1 < 999:
+                        mask = np.load(
+                            self.contour_directory + '0' + str(i+1) +
+                            '_mask' + '.npy'
+                        )
+                    self.current_image.image[mask == 0] = 0
                 spy[:, i] = self.current_image.image[:, row_id]
             if row_id < 10:
                 np.save(
@@ -290,6 +307,23 @@ class StackProcessing(object):
             # initiate matrix size for spatiox
             for i in range(self.n_image_tot):
                 self.read_image(i)
+                if read_mask:
+                    if i+1 < 9:
+                        mask = np.load(
+                            self.contour_directory + '000' + str(i+1) +
+                            '_mask' + '.npy'
+                        )
+                    elif i+1 < 99:
+                        mask = np.load(
+                            self.contour_directory + '00' + str(i+1) +
+                            '_mask' + '.npy'
+                        )
+                    elif i+1 < 999:
+                        mask = np.load(
+                            self.contour_directory + '0' + str(i+1) +
+                            '_mask' + '.npy'
+                        )
+                    self.current_image.image[mask == 0] = 0
                 spx[:, i] = self.current_image.image[col_id, :]
             if col_id < 10:
                 np.save(
@@ -316,6 +350,128 @@ class StackProcessing(object):
                     spx
                 )
             pbar.update(row_id + col_id)
+        pbar.finish()
+
+        # ===  update saptios infos === #
+        self.update_lists()
+        self.current_spatiox_number = 0
+        self.current_spatioy_number = 0
+        self.read_spatio(type='x')
+        self.read_spatio(type='y')
+
+    def create_spatio2(self, read_mask=False):
+        """
+        Create image spatio-temporal of the view.
+
+        This action will create spatio, and save them in 2_results directory.
+        This a little bit long (few minutes.)
+
+        To optimise, crop the image before.
+        """
+        # === start progressbar === #
+        widgets = ['Creating spatios',
+                   ' ', progressbar.Percentage(),
+                   ' ', progressbar.Bar('=', '[', ']'),
+                   ' ', progressbar.ETA(),
+                   ' ', progressbar.FileTransferSpeed()]
+        pbar = progressbar.ProgressBar(
+            widgets=widgets,
+            maxval=(
+                self.n_image_tot +
+                self.current_image.size[0] + self.current_image.size[1]
+            )
+        )
+        pbar.start()
+        spy = np.zeros(
+                [self.current_image.size[1],
+                 self.current_image.size[0],
+                 self.n_image_tot]
+        )
+        spx = np.zeros(
+                [self.current_image.size[0],
+                 self.current_image.size[1],
+                 self.n_image_tot]
+        )
+        for i in range(self.n_image_tot):
+            self.read_image(i)
+            if read_mask:
+                if i+1 < 10:
+                    mask = np.load(
+                        self.contour_directory + '000' + str(i+1) +
+                        '_mask' + '.npy'
+                    )
+                elif i+1 < 100:
+                    mask = np.load(
+                        self.contour_directory + '00' + str(i+1) +
+                        '_mask' + '.npy'
+                    )
+                elif i+1 < 1000:
+                    mask = np.load(
+                        self.contour_directory + '0' + str(i+1) +
+                        '_mask' + '.npy'
+                    )
+                self.current_image.image[mask == 0] = 0
+
+            # === create spatioy === #
+            for row_id in range(0, self.current_image.size[1]):
+                spy[row_id, :, i] = self.current_image.image[:, row_id]
+            for col_id in range(0, self.current_image.size[0]):
+                spx[col_id, :, i] = self.current_image.image[col_id, :]
+            pbar.update(i)
+
+        for col_id in range(self.current_image.size[1]):
+            if col_id < 10:
+                np.save(
+                    self.exporting_directory + 'spatioy/' + 'i_000' +
+                    str(col_id),
+                    spy[col_id, :, :]
+                )
+            elif col_id < 100:
+                np.save(
+                    self.exporting_directory + 'spatioy/' + 'i_00' +
+                    str(col_id),
+                    spy[col_id, :, :]
+                )
+            elif col_id < 1000:
+                np.save(
+                    self.exporting_directory + 'spatioy/' + 'i_0' +
+                    str(col_id),
+                    spy[col_id, :, :]
+                )
+            elif col_id < 10000:
+                np.save(
+                    self.exporting_directory + 'spatioy/' + 'i_' +
+                    str(col_id),
+                    spy[col_id, :, :]
+                )
+            pbar.update(self.n_image_tot + col_id)
+
+        for row_id in range(self.current_image.size[0]):
+            if row_id < 10:
+                np.save(
+                    self.exporting_directory + 'spatiox/' + 'i_000' +
+                    str(row_id),
+                    spx[row_id, :, :]
+                )
+            elif row_id < 100:
+                np.save(
+                    self.exporting_directory + 'spatiox/' + 'i_00' +
+                    str(row_id),
+                    spx[row_id, :, :]
+                )
+            elif row_id < 1000:
+                np.save(
+                    self.exporting_directory + 'spatiox/' + 'i_0' +
+                    str(row_id),
+                    spx[row_id, :, :]
+                )
+            elif row_id < 10000:
+                np.save(
+                    self.exporting_directory + 'spatiox/' + 'i_' +
+                    str(row_id),
+                    spx[row_id, :, :]
+                )
+            pbar.update(self.n_image_tot + self.current_image.size[1] + row_id)
         pbar.finish()
 
         # ===  update saptios infos === #
@@ -2796,32 +2952,36 @@ class StackProcessing(object):
         """Corect the mask for image detection."""
         if time_ref+1 < 9:
             mask = np.load(
-                self.contour_directory + '000' + str(it+1) + '_mask' +
+                self.contour_directory + '000' + str(time_ref+1) + '_mask' +
                 '.npy'
             )
         elif time_ref+1 < 99:
             mask = np.load(
-                self.contour_directory + '00' + str(it+1) + '_mask' +
+                self.contour_directory + '00' + str(time_ref+1) + '_mask' +
                 '.npy'
             )
         elif time_ref+1 < 999:
             mask = np.load(
-                self.contour_directory + '0' + str(it+1) + '_mask' +
+                self.contour_directory + '0' + str(time_ref+1) + '_mask' +
                 '.npy'
             )
 
-        # mask[mask <= np.std(mask)] = 0
-        # mask[mask > 0] = 1
-
-        plt.figure()
-        self.read_image(time_ref)
-        plt.imshow(self.current_image.image, cmap='gray')
-        plt.imshow(mask, alpha=.3)
-
-        # plt.figure()
-        # plt.imshow(mask1)
-        plt.show()
-
+        for it in range(0, time_ref):
+            if it < 9:
+                np.save(
+                    self.contour_directory + '/000' + str(it+1) + '_mask',
+                    mask
+                )
+            elif it < 99:
+                np.save(
+                    self.contour_directory + '/00' + str(it+1) + '_mask',
+                    mask
+                )
+            elif it < 999:
+                np.save(
+                    self.contour_directory + '/0' + str(it+1) + '_mask',
+                    mask
+                )
 
 class StackProcessingError(Exception):
     """Create excpetion for StacProcessing class."""
@@ -2999,7 +3159,12 @@ if __name__ == '__main__':
     #   stack.display_contour(ii)
 
     # stack.read_image(161)
-    baseline, x0 = stack.get_baseline2()
-    stack.drop_info_all(x0, baseline[1], baseline[0], -1, True)
-    stack.display_drop_info()
+    # baseline, x0 = stack.get_baseline2()
+    # stack.drop_info_all(x0, baseline[1], baseline[0], -1, True)
+    # stack.display_drop_info()
     # stack.correct_mask(118)
+    # stack.create_spatio2(True)
+    stack.read_spatio(400, 'y')
+    # stack.current_spatioy.show_image()
+
+    stack.get_time_front(90, 118, plot=True)
