@@ -237,19 +237,15 @@ class ImageProcessing():
         gx = signal.convolve2d(self.image, gradx, border)
 
         if out == 'x':
-            self.image = gx
-            return
+            return gx
         if out == 'y':
-            self.image = gy
-            return
+            return gy
         if out == 'mag':
             gmag = np.sqrt(gy**2 + gx**2)
-            self.image = gmag
-            return
+            return gmag
         if out == 'arg':
             garg = np.arctan2(gy, gx)
-            self.image = garg
-            return
+            return garg
 
 
 if __name__ == '__main__':
