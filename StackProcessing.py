@@ -717,7 +717,7 @@ class StackProcessing(object):
         pbar.start()
         for i, i_im in enumerate(x):
             self.read_spatio(i_im)
-            self.current_spatioy.gradient(type='sobel', size=5, out='y')
+            self.current_spatioy.image = self.current_spatioy.gradient(type='sobel', size=5, out='y')
             p = []
             for i_s in range(self.current_spatioy.size[1] - 4):
                 # "-4" because of the gradient
@@ -938,7 +938,7 @@ class StackProcessing(object):
 
         Please provide x, ymin and ymax from set_contour_ref().
         """
-        self.current_image.gradient(type='sobel', size=5)
+        self.current_image.image = self.current_image.gradient(type='sobel', size=5)
 
         thres = np.mean(self.current_image.image) +\
             fac*np.std(self.current_image.image)
@@ -1289,7 +1289,7 @@ class StackProcessing(object):
             )
 
             # ===  intensity sobel (5x5) of current_spatio === #
-            self.current_spatioy.gradient(type='sobel', size=5, out='mag')
+            self.current_spatioy.image = self.current_spatioy.gradient(type='sobel', size=5, out='mag')
             it_sbl = self.current_spatioy.image
             it_sbl = it_sbl[rows, :]
             it_sbl = it_sbl[time_ref:]
@@ -1302,7 +1302,7 @@ class StackProcessing(object):
 
             # === intensity sobel /y (5x5) of current_images === #
             self.read_spatio()
-            self.current_spatioy.gradient(type='sobel', size=5, out='y')
+            self.current_spatioy.image = self.current_spatioy.gradient(type='sobel', size=5, out='y')
             # apply sobel gradient
             it_sby = 1 - self.current_spatioy.image
             it_sby = it_sby[rows, :]
@@ -1316,7 +1316,7 @@ class StackProcessing(object):
 
         # ==== intensity sobel /t (5x5) of current_images === #
         self.read_spatio()  # read current spatio /y
-        self.current_spatioy.gradient(type='sobel', size=5, out='mag')
+        self.current_spatioy.image = self.current_spatioy.gradient(type='sobel', size=5, out='mag')
         # apply gradient 2D by sobel
         it_sbt = self.current_spatioy.image  # inverse the image
 
@@ -1905,6 +1905,154 @@ class StackProcessing(object):
         plt.show()
 
         return t_front, y_front
+
+    def get_front(self, row, time_ref, smooth=3, fac=.75, plot=False):
+        """
+        Determine the fronts postions in current_spatioy for the indicated row.
+
+        :param row: at which rows to detect the front. Can be a list or a int.
+        :param time_ref:
+
+        """
+        self.read_spatio()  # read current spatio /y
+        grad = self.current_spatioy.gradient(type='sobel', size=5, out='mag', border='valid')
+        it_sbt = self.current_spatioy.image
+        it_sbt[2:-2, 2:-2] = grad
+
+        # flux at north, southe east & west
+        it_sbt[:2, 2:-2] = it_sbt[2, 2:-2]
+        it_sbt[-2:, 2:-2] = it_sbt[-3, 2:-2]
+        it_sbt[2:-2, :2] = np.transpose(np.tile(it_sbt[2:-2, 2], (2, 1)))
+        it_sbt[2:-2, -2:] = np.transpose(np.tile(it_sbt[2:-2, -3], (2, 1)))
+
+        # top left corner
+        it_sbt[1, 0] = it_sbt[2, 0]
+        it_sbt[0, 1] = it_sbt[0, 2]
+        it_sbt[1, 1] = (it_sbt[2, 1] + it_sbt[1, 2])/2
+        it_sbt[0, 0] = (it_sbt[1, 0] + it_sbt[0, 1])/2
+
+        # bottom left corner
+        it_sbt[-2, 0] = it_sbt[-3, 0]
+        it_sbt[-1, 1] = it_sbt[-1, 2]
+        it_sbt[-2, 1] = (it_sbt[-3, 1] + it_sbt[-2, 2])/2
+        it_sbt[-1, 0] = (it_sbt[-2, 0] + it_sbt[-1, 1])/2
+
+        # top right corner
+        it_sbt[0, -2] = it_sbt[0, -3]
+        it_sbt[1, -1] = it_sbt[2, -1]
+        it_sbt[1, -2] = (it_sbt[1, -3] + it_sbt[2, -2])/2
+        it_sbt[0, -1] = (it_sbt[0, -2] + it_sbt[1, -1])/2
+
+        # bottom right corner
+        it_sbt[-2, -1] = it_sbt[-3, -1]
+        it_sbt[-1, -2] = it_sbt[-1, -3]
+        it_sbt[-2, -2] = (it_sbt[-3, -2] + it_sbt[-2, -3])/2
+        it_sbt[-1, -1] = (it_sbt[-1, -2] + it_sbt[-2, -1])/2
+
+
+        # apply gradient 2D by sobel
+        it_sbt = it_sbt[row, time_ref:]  # get the row intensity
+        ita_sbt = np.convolve(it_sbt, np.ones([smooth, ])/smooth, 'same')
+        ita_sbt[:2] = it_sbt[:2]
+        ita_sbt[-2:] = it_sbt[-2:]
+
+        if (
+            np.argmax(it_sbt) in [0, 1, len(it_sbt)-2, len(it_sbt)-1] and
+            np.std(it_sbt) > 1e-2
+        ):
+            peaks = pf.PeakDetection(ita_sbt, fac*np.std(ita_sbt))
+            max_location = np.array(peaks.max_location)
+            max_magnitude = np.array(peaks.max_magnitude)
+            max_location = max_location[
+                max_magnitude >= np.mean(it_sbt)
+            ]
+
+            if len(max_location) == 2:
+                front = max_location[1]
+            elif len(max_location) == 1:
+                if max_location[0] == 0:
+                    it_sbt2 = it_sbt[2:]
+                    ita_sbt2 = np.convolve(it_sbt2, np.ones([smooth, ])/smooth, 'same')
+                    peaks2 = pf.PeakDetection(ita_sbt2, fac*np.std(ita_sbt2))
+                    max_location2 = np.array(peaks2.max_location)
+                    max_magnitude2 = np.array(peaks2.max_magnitude)
+                    max_location2 = max_location2[
+                        max_magnitude2 >= np.mean(it_sbt2)
+                    ]
+                    if plot:
+                        plt.figure()
+                        plt.plot(it_sbt)
+                        plt.plot(ita_sbt)
+                        plt.plot(np.arange(2, len(it_sbt)), it_sbt2)
+                        plt.plot(np.arange(2, len(it_sbt)), ita_sbt2)
+                        plt.plot(max_location2+2, it_sbt[max_location2+2], 'or')
+
+                    if len(max_location2) == 1:
+                        front = max_location2[0]+2
+                    else:
+                        print('No statut for this case...', row)
+                        print(len(max_location2))
+                        front = np.nan
+                else:
+                    front = max_location[0]
+            elif len(max_location) == 0:
+                print('No peak here', row)
+                front = np.nan
+            else:
+                front = np.nan
+                print('To much peaks here', row)
+
+            if plot:
+                print(np.std(ita_sbt), np.std(it_sbt))
+
+                plt.figure()
+                plt.plot(it_sbt)
+                plt.plot(ita_sbt)
+                plt.plot(max_location, ita_sbt[max_location], 'or')
+                plt.plot(
+                    [0, len(it_sbt)],
+                    [np.mean(it_sbt), np.mean(it_sbt)],
+                    '--k'
+                )
+                # plt.plot(peaks.min_location, ita_sbt[peaks.min_magnitude], 'ob')
+        elif np.argmax(it_sbt) == 0 and np.std(it_sbt <= 1e-2):
+            print('No front here ', row)
+            front = np.nan
+        else:
+            front = np.argmax(it_sbt)
+
+        if plot:
+            print('Front position : ', front)
+
+            plt.figure()
+            plt.imshow(self.current_spatioy.image[:, time_ref:], cmap='gray')
+            plt.plot(front, row, 'ob')
+
+            plt.figure()
+            plt.plot(it_sbt)
+            plt.plot(ita_sbt)
+            # plt.plot(front, it_sbt[front], 'ob')
+            plt.show()
+
+        return front
+
+    def get_front_all_row(self, time_ref, smooth=3, fac=.5, plot=False):
+        """
+        Determine the fronts postions in current_spatioy for the indicated row.
+
+        :param time_ref:
+        """
+        front = np.zeros(self.current_spatioy.size[0])
+        for row in range(0, self.current_spatioy.size[0]):
+            front[row] = self.get_front(row, time_ref, smooth ,fac, False)
+
+        if plot:
+            plt.figure()
+            plt.imshow(self.current_spatioy.image[:, time_ref:], cmap='gray')
+            plt.plot(front, np.arange(0, self.current_spatioy.size[0]), '.b')
+            plt.show()
+
+
 
     def calcul_one_volume_total(self, plot=True):
         """Calculate the volume of one frame."""
@@ -3165,6 +3313,15 @@ if __name__ == '__main__':
     # stack.correct_mask(118)
     # stack.create_spatio2(True)
     stack.read_spatio(400, 'y')
+    # stack.read_spatio(90, 'x')
     # stack.current_spatioy.show_image()
+    # stack.current_spatiox.show_image()
+    # ll = np.array([30, 90, 110, 150, 200], dtype=np.int)
+    # for i in ll:
+    #    stack.get_time_front(np.int(i), 118, plot=True)
+    # plt.show()
+    fac = .75
+    stack.get_front(row=210, time_ref=118, fac=fac, plot=True)
+    stack.get_front(row=217, time_ref=118, fac=fac, plot=True)
 
-    stack.get_time_front(90, 118, plot=True)
+    stack.get_front_all_row(time_ref=118, fac=fac, plot=True)
