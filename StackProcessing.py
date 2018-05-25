@@ -12,6 +12,8 @@ Allow you to treating a stack of image.
 :version: 5.0
 """
 
+import datetime as date
+
 import numpy as np
 from scipy import optimize
 from lmfit import Model as lmmodel
@@ -58,6 +60,16 @@ class StackProcessing(object):
             :method read_image: read an image
 
         """
+        f = open(directory + ".history", "a+")
+        now = date.datetime.now()
+        f.write("------\n")
+        f.write(
+            "Open StackProcessing on {:s} at {:s}\n\n".format(
+                now.strftime("%Y-%m-%d"),
+                now.strftime("%H:%M:%S")
+            )
+        )
+        f.close()
         # initiate directories
         self.data_directory = directory
         self.define_exporting_directory()
@@ -93,15 +105,20 @@ class StackProcessing(object):
             os.makedirs(self.exporting_directory + 'lastOp/')
             os.makedirs(self.exporting_directory + 'spatiox/')
             os.makedirs(self.exporting_directory + 'spatioy/')
-            print(
-                'New directories have been created in :',
-                self.exporting_directory
+            f = open(self.data_directory + ".history", "a+")
+            f.write(
+                '\tNew directories have been created in : {:s}\n'.format(
+                    self.exporting_directory
+                )
             )
+            f.close()
+
         self.front_directory = self.exporting_directory.replace(
             'export_image', 'front'
         )
         if not os.path.isdir(self.front_directory):
             os.makedirs(self.front_directory)
+
         self.contour_directory = self.exporting_directory.replace(
             'export_image', 'contour'
         )
@@ -219,6 +236,14 @@ class StackProcessing(object):
             self.current_image = ip.ImageProcessing(
                     self.image_list[ni]
             )
+            f = open(self.data_directory + ".history", "a+")
+            f.write(
+                '\tImage read : {:#}\n'.format(
+                    ni
+                )
+            )
+            f.close()
+
         except IndexError:
             print(
                 'Image number', ni,
@@ -474,6 +499,14 @@ class StackProcessing(object):
             pbar.update(self.n_image_tot + self.current_image.size[1] + row_id)
         pbar.finish()
 
+        f = open(self.data_directory + ".history", "a+")
+        f.write(
+            '\tSpatio have been created, and save in : {:s}\n'.format(
+                self.exporting_directory + 'spatio#/'
+            )
+        )
+        f.close()
+
         # ===  update saptios infos === #
         self.update_lists()
         self.current_spatiox_number = 0
@@ -505,19 +538,41 @@ class StackProcessing(object):
                 self.current_spatiox = ip.ImageProcessing(
                     self.spatiox_list[ni]
                     )
+                f = open(self.data_directory + ".history", "a+")
+                f.write(
+                    '\tRead spatio{:s} : {:#}\n'.format(
+                        type,
+                        ni
+                    )
+                )
+                f.close()
         elif type == 'y' and ni >= 0 and ni < self.n_spatioy_tot:
                 self.current_spatioy = ip.ImageProcessing(
                     self.spatioy_list[ni]
                 )
+                f = open(self.data_directory + ".history", "a+")
+                f.write(
+                    '\tRead spatio{:s} : {:#}\n'.format(
+                        type,
+                        ni
+                    )
+                )
+                f.close()
         elif type == 'x' and ni == -1:
-            print('There is no spatiox')
             self.current_spatiox = []
         elif type == 'y' and ni == -1:
-            print('There is no spatioy')
             self.current_spatioy = []
         else:
-            print('Index out of the boundary, first spatio will be loaded')
-            self.read_spatio(ni=ni, type=type)
+            f = open(self.data_directory + ".history", "a+")
+            f.write(
+                '\tTrying to read spatio{:s} : {:#},\
+                 but is out of boundaries.\n'.format(
+                    type,
+                    ni
+                )
+            )
+            f.close()
+            self.read_spatio(ni=0, type=type)
 
     def remove_spatios(self):
         """Erase both spatios files."""
@@ -525,13 +580,18 @@ class StackProcessing(object):
             os.remove(i)
         for i in self.spatioy_list:
             os.remove(i)
+        f = open(self.data_directory + ".history", "a+")
+        f.write(
+            '\tRemove all spatio\n'
+        )
+        f.close()
         self.update_lists()
         self.current_spatiox_number = -1
         self.current_spatioy_number = -1
         self.read_spatio(type='x')
         self.read_spatio(type='y')
 
-    def treatment(self, treatment, *args, plot=True):
+    def treatment(self, treatment, *args, plot=True, _hist=True):
         """
         Apply a treatment to the current_image, and displays it.
 
@@ -548,6 +608,14 @@ class StackProcessing(object):
         if treatment == 'crop':
             if len(args) == 4:
                 self.current_image.crop(*args)
+                if _hist:
+                    f = open(self.data_directory + ".history", "a+")
+                    f.write(
+                        '\tCrop current image : ({:#},{:#})({:#},{:#})\n'.format(
+                            *args
+                        )
+                    )
+                    f.close()
             else:
                 raise StackProcessingError(
                     'Crop treatment requires 4 arguments'
@@ -555,6 +623,15 @@ class StackProcessing(object):
         elif treatment == 'clahe':
             if len(args) == 2 or len(args) == 0:
                 self.current_image.equalize_hist_by_clahe(*args)
+                if _hist:
+                    f = open(self.data_directory + ".history", "a+")
+                    f.write(
+                        '\tClahe equalization on current image : \
+                        ({:#},{:#})\n'.format(
+                             *args if len(args) == 2 else str(2), str(8)
+                        )
+                    )
+                    f.close()
             else:
                 raise StackProcessingError(
                     'Equalize treatment require 0 or 2 arguments'
@@ -562,6 +639,15 @@ class StackProcessing(object):
         elif treatment == 'equalize':
             if len(args) == 1 or len(args) == 0:
                 self.current_image.equalize_hist(*args)
+                if _hist:
+                    f = open(self.data_directory + ".history", "a+")
+                    f.write(
+                        '\tGlobal equalization on current image : \
+                        ({:#},{:#})\n'.format(
+                             *args if len(args) == 1 else str(12)
+                        )
+                    )
+                    f.close()
             else:
                 raise StackProcessingError(
                     'Equalize treatment require 0 or 1 argument'
@@ -581,6 +667,13 @@ class StackProcessing(object):
         ))
         for i in files:
             os.remove(i)
+        f = open(self.data_directory + ".history", "a+")
+        f.write(
+            '\tRemove all files in {:s}\n'.format(
+                self.exporting_directory + '/lastOp/'
+            )
+        )
+        f.close()
         self.update_lists()
         self.read_image()
 
@@ -591,6 +684,8 @@ class StackProcessing(object):
         Arguments are needed. There are the same than for treament, because
         save_treatment call recursivly treament.
         """
+        temp = self.current_image_number
+
         # === initiate progressbar === #
         widgets = [treatment,
                    ' ', progressbar.Percentage(),
@@ -604,7 +699,7 @@ class StackProcessing(object):
         # === loop over images === #
         for i in range(self.n_image_tot):
             self.read_image(i)
-            self.treatment(treatment, *args, plot=False)
+            self.treatment(treatment, *args, plot=False, _hist=False)
             if i < 9:
                 np.save(
                     self.exporting_directory + 'lastOp/' + 'i_000' + str(i+1),
@@ -623,9 +718,19 @@ class StackProcessing(object):
             pbar.update(i)
         pbar.finish()
 
+        f = open(self.data_directory + ".history", "a+")
+        f.write(
+            '\t{:s} saved in {:s} : \
+            ({:#},{:#})\n'.format(
+                treatment,
+                self.exporting_directory + '/lastOp/'
+            )
+        )
+        f.close()
+
         # === update images infos === #
         self.update_lists()
-        self.read_image()
+        self.read_image(temp)
 
     def set_time_reference(self, time_error=2, plot=False):
         """
@@ -1906,7 +2011,7 @@ class StackProcessing(object):
 
         return t_front, y_front
 
-    def get_front(self, row, time_ref, smooth=3, fac=.75, plot=False):
+    def get_front(self, it_sbt, row, smooth=3, fac=.75, plot=False):
         """
         Determine the fronts postions in current_spatioy for the indicated row.
 
@@ -1914,44 +2019,6 @@ class StackProcessing(object):
         :param time_ref:
 
         """
-        self.read_spatio()  # read current spatio /y
-        grad = self.current_spatioy.gradient(type='sobel', size=5, out='mag', border='valid')
-        it_sbt = self.current_spatioy.image
-        it_sbt[2:-2, 2:-2] = grad
-
-        # flux at north, southe east & west
-        it_sbt[:2, 2:-2] = it_sbt[2, 2:-2]
-        it_sbt[-2:, 2:-2] = it_sbt[-3, 2:-2]
-        it_sbt[2:-2, :2] = np.transpose(np.tile(it_sbt[2:-2, 2], (2, 1)))
-        it_sbt[2:-2, -2:] = np.transpose(np.tile(it_sbt[2:-2, -3], (2, 1)))
-
-        # top left corner
-        it_sbt[1, 0] = it_sbt[2, 0]
-        it_sbt[0, 1] = it_sbt[0, 2]
-        it_sbt[1, 1] = (it_sbt[2, 1] + it_sbt[1, 2])/2
-        it_sbt[0, 0] = (it_sbt[1, 0] + it_sbt[0, 1])/2
-
-        # bottom left corner
-        it_sbt[-2, 0] = it_sbt[-3, 0]
-        it_sbt[-1, 1] = it_sbt[-1, 2]
-        it_sbt[-2, 1] = (it_sbt[-3, 1] + it_sbt[-2, 2])/2
-        it_sbt[-1, 0] = (it_sbt[-2, 0] + it_sbt[-1, 1])/2
-
-        # top right corner
-        it_sbt[0, -2] = it_sbt[0, -3]
-        it_sbt[1, -1] = it_sbt[2, -1]
-        it_sbt[1, -2] = (it_sbt[1, -3] + it_sbt[2, -2])/2
-        it_sbt[0, -1] = (it_sbt[0, -2] + it_sbt[1, -1])/2
-
-        # bottom right corner
-        it_sbt[-2, -1] = it_sbt[-3, -1]
-        it_sbt[-1, -2] = it_sbt[-1, -3]
-        it_sbt[-2, -2] = (it_sbt[-3, -2] + it_sbt[-2, -3])/2
-        it_sbt[-1, -1] = (it_sbt[-1, -2] + it_sbt[-2, -1])/2
-
-
-        # apply gradient 2D by sobel
-        it_sbt = it_sbt[row, time_ref:]  # get the row intensity
         ita_sbt = np.convolve(it_sbt, np.ones([smooth, ])/smooth, 'same')
         ita_sbt[:2] = it_sbt[:2]
         ita_sbt[-2:] = it_sbt[-2:]
@@ -2036,23 +2103,76 @@ class StackProcessing(object):
 
         return front
 
-    def get_front_all_row(self, time_ref, smooth=3, fac=.5, plot=False):
+    def get_front_all_row(self, Cy, baseline, time_ref, smooth=3, fac=.5, plot=False):
         """
         Determine the fronts postions in current_spatioy for the indicated row.
 
+        :param : Cy : time vector containing the contour positon over the time
+        :param : baseline : scalar value of the baseline
         :param time_ref:
         """
-        front = np.zeros(self.current_spatioy.size[0])
-        for row in range(0, self.current_spatioy.size[0]):
-            front[row] = self.get_front(row, time_ref, smooth ,fac, False)
+        self.read_spatio()  # read current spatio /y
+        grad = self.current_spatioy.gradient(type='sobel', size=5, out='mag', border='valid')
+        it_sbt = self.current_spatioy.image
+        it_sbt[2:-2, 2:-2] = grad
+
+        # flux at north, southe east & west
+        it_sbt[:2, 2:-2] = it_sbt[2, 2:-2]
+        it_sbt[-2:, 2:-2] = it_sbt[-3, 2:-2]
+        it_sbt[2:-2, :2] = np.transpose(np.tile(it_sbt[2:-2, 2], (2, 1)))
+        it_sbt[2:-2, -2:] = np.transpose(np.tile(it_sbt[2:-2, -3], (2, 1)))
+
+        # top left corner
+        it_sbt[1, 0] = it_sbt[2, 0]
+        it_sbt[0, 1] = it_sbt[0, 2]
+        it_sbt[1, 1] = (it_sbt[2, 1] + it_sbt[1, 2])/2
+        it_sbt[0, 0] = (it_sbt[1, 0] + it_sbt[0, 1])/2
+
+        # bottom left corner
+        it_sbt[-2, 0] = it_sbt[-3, 0]
+        it_sbt[-1, 1] = it_sbt[-1, 2]
+        it_sbt[-2, 1] = (it_sbt[-3, 1] + it_sbt[-2, 2])/2
+        it_sbt[-1, 0] = (it_sbt[-2, 0] + it_sbt[-1, 1])/2
+
+        # top right corner
+        it_sbt[0, -2] = it_sbt[0, -3]
+        it_sbt[1, -1] = it_sbt[2, -1]
+        it_sbt[1, -2] = (it_sbt[1, -3] + it_sbt[2, -2])/2
+        it_sbt[0, -1] = (it_sbt[0, -2] + it_sbt[1, -1])/2
+
+        # bottom right corner
+        it_sbt[-2, -1] = it_sbt[-3, -1]
+        it_sbt[-1, -2] = it_sbt[-1, -3]
+        it_sbt[-2, -2] = (it_sbt[-3, -2] + it_sbt[-2, -3])/2
+        it_sbt[-1, -1] = (it_sbt[-1, -2] + it_sbt[-2, -1])/2
+
+        it_sbt = it_sbt[:, time_ref:]  # get the row intensity
+
+        Cmin = 0
+        while np.sum(it_sbt[Cmin, :]) == 0:
+            Cmin += 1
+
+        rows = np.arange(Cmin, baseline)
+        front = np.zeros(len(rows))
+        C = np.zeros(len(rows))
+
+        for row in rows:
+            if it_sbt[row, 0] != 0:
+                C[row-Cmin] = 0
+                front[row-Cmin] = self.get_front(it_sbt[row, :], row, smooth, fac, False)
+            else:
+                k = 1
+                while it_sbt[row, k] == 0 and k < len(it_sbt[row, :]):
+                    k += 1
+                C[row-Cmin] = k
+                front[row-Cmin] = k+self.get_front(it_sbt[row, k:], row, smooth, fac, False)
 
         if plot:
             plt.figure()
             plt.imshow(self.current_spatioy.image[:, time_ref:], cmap='gray')
-            plt.plot(front, np.arange(0, self.current_spatioy.size[0]), '.b')
+            plt.plot(C, rows, '.r')
+            plt.plot(front, rows, '.b')
             plt.show()
-
-
 
     def calcul_one_volume_total(self, plot=True):
         """Calculate the volume of one frame."""
@@ -3312,6 +3432,7 @@ if __name__ == '__main__':
     # stack.display_drop_info()
     # stack.correct_mask(118)
     # stack.create_spatio2(True)
+    stack.read_image(120)
     stack.read_spatio(400, 'y')
     # stack.read_spatio(90, 'x')
     # stack.current_spatioy.show_image()
@@ -3321,7 +3442,7 @@ if __name__ == '__main__':
     #    stack.get_time_front(np.int(i), 118, plot=True)
     # plt.show()
     fac = .75
-    stack.get_front(row=210, time_ref=118, fac=fac, plot=True)
-    stack.get_front(row=217, time_ref=118, fac=fac, plot=True)
-
-    stack.get_front_all_row(time_ref=118, fac=fac, plot=True)
+    #stack.get_front(row=210, time_ref=118, fac=fac, plot=True)
+    #stack.get_front(row=217, time_ref=118, fac=fac, plot=True)
+    Cy = np.random.randint(64, size=(162, 1))
+    stack.get_front_all_row(Cy=Cy, baseline=250, time_ref=118, fac=fac, plot=True)

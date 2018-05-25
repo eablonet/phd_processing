@@ -157,7 +157,7 @@ class ImageProcessing():
         cs = (cs - cs.min())*2**bit/(cs.max()-cs.min())  # linearisation
         self.image = np.array(cs[self.image], dtype=np.uint16)
 
-    def equalize_hist_by_clahe(self, limit=.2, size=8):
+    def equalize_hist_by_clahe(self, limit=2, size=8):
         """Equalize automatic the histogram by local method.
 
         CLAHE : adaptative localized histogram equalizer.
